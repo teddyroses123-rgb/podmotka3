@@ -12,6 +12,12 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
 export const saveContentToDatabase = async (content: SiteContent): Promise<boolean> => {
   try {
+    // Check if Supabase is properly configured
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ Supabase not configured - missing environment variables');
+      return false;
+    }
+
     console.log('🔄 ПОПЫТКА СОХРАНЕНИЯ В БД...');
     
     const { data, error } = await supabase
@@ -37,6 +43,12 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
 
 export const loadContentFromDatabase = async (): Promise<SiteContent | null> => {
   try {
+    // Check if Supabase is properly configured
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ Supabase not configured - missing environment variables');
+      return null;
+    }
+
     console.log('🔄 ЗАГРУЗКА ИЗ БД...');
     
     const { data, error } = await supabase
