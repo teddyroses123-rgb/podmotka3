@@ -43,7 +43,7 @@ export const loadContentFromDatabase = async (): Promise<SiteContent | null> => 
       .from('site_content')
       .select('content')
       .eq('id', 'main')
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('❌ ОШИБКА ЗАГРУЗКИ ИЗ БД:', error);
