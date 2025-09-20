@@ -6,10 +6,10 @@ import { saveContentToDatabase, loadContentFromDatabase } from './supabase';
 let saveTimeout: NodeJS.Timeout | null = null;
 const SAVE_DELAY = 1000; // 1 секунда задержки
 
-// ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ЗАЩИТА: Проверка является ли контент дефолтным
-const isDefaultContent = (content: SiteContent): boolean => {
+// Проверка является ли контент полностью дефолтным (без пользовательских изменений)
+const isCompletelyDefaultContent = (content: SiteContent): boolean => {
   try {
-    // Множественные проверки дефолтного контента
+    // Проверяем только критические признаки ПОЛНОСТЬЮ дефолтного контента
     const hasDefaultHeroTitle = content.blocks.some(block => 
       block.id === 'hero' && 
       block.title === 'ПІДМОТКА СПІДОМЕТРА — У ВАШИХ РУКАХ'
@@ -27,26 +27,24 @@ const isDefaultContent = (content: SiteContent): boolean => {
       block.id === 'ops-module' && block.price === '3200'
     );
     
-    const hasDefaultModulesCount = content.blocks.filter(block => 
-      ['can-module', 'analog-module', 'ops-module'].includes(block.id)
-    ).length === 3;
+    const hasOnlyDefaultBlocks = content.blocks.filter(block => 
+      block.type === 'custom'
+    ).length === 0; // Нет пользовательских блоков
     
-    // Если хотя бы 3 из 5 признаков совпадают - это дефолт
-    const defaultIndicators = [
-      hasDefaultHeroTitle,
-      hasDefaultCanPrice, 
-      hasDefaultAnalogPrice,
-      hasDefaultOpsPrice,
-      hasDefaultModulesCount
-    ].filter(Boolean).length;
+    // СТРОГАЯ проверка - ВСЕ 5 признаков должны совпадать для блокировки
+    const isCompletelyDefault = hasDefaultHeroTitle && 
+                               hasDefaultCanPrice && 
+                               hasDefaultAnalogPrice && 
+                               hasDefaultOpsPrice && 
+                               hasOnlyDefaultBlocks;
     
-    const isDefault = defaultIndicators >= 3;
-    
-    if (isDefault) {
-      console.log('🚫 ОБНАРУЖЕН ДЕФОЛТНЫЙ КОНТЕНТ! БЛОКИРОВКА СОХРАНЕНИЯ!');
+    if (isCompletelyDefault) {
+      console.log('🚫 ОБНАРУЖЕН ПОЛНОСТЬЮ ДЕФОЛТНЫЙ КОНТЕНТ! БЛОКИРОВКА СОХРАНЕНИЯ!');
+    } else {
+      console.log('✅ КОНТЕНТ СОДЕРЖИТ ПОЛЬЗОВАТЕЛЬСКИЕ ИЗМЕНЕНИЯ - РАЗРЕШЕНО СОХРАНЕНИЕ');
     }
     
-    return isDefault;
+    return isCompletelyDefault;
   } catch (error) {
     console.error('❌ Ошибка проверки дефолтного контента:', error);
     return false; // При ошибке НЕ блокируем - пусть сохраняется
@@ -57,8 +55,8 @@ const isDefaultContent = (content: SiteContent): boolean => {
 export const saveContent = async (content: SiteContent, immediate: boolean = false): Promise<void> => {
   try {
     // ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ПРОВЕРКА: НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ!
-    if (isDefaultContent(content)) {
-      console.log('🚫 БЛОКИРОВКА: ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
+    if (isCompletelyDefaultContent(content)) {
+      console.log('🚫 БЛОКИРОВКА: ПОЛНОСТЬЮ ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
       return;
     }
     
