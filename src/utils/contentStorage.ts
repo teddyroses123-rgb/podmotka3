@@ -8,6 +8,30 @@ const SAVE_DELAY = 1000; // 1 секунда задержки
 
 const STORAGE_KEY = 'siteContent';
 
+// Функция для проверки является ли контент дефолтным
+const isDefaultContent = (content: SiteContent): boolean => {
+  try {
+    // Проверяем по ключевым характеристикам дефолтного контента
+    const hasDefaultHeroTitle = content.blocks.some(block => 
+      block.id === 'hero' && 
+      block.title === 'ПІДМОТКА СПІДОМЕТРА — У ВАШИХ РУКАХ'
+    );
+    
+    const hasDefaultModulesCount = content.blocks.filter(block => 
+      ['can-module', 'analog-module', 'ops-module'].includes(block.id)
+    ).length === 3;
+    
+    const hasDefaultPrices = content.blocks.some(block => 
+      block.id === 'can-module' && block.price === '2500'
+    );
+    
+    return hasDefaultHeroTitle && hasDefaultModulesCount && hasDefaultPrices;
+  } catch (error) {
+    console.error('❌ Ошибка проверки дефолтного контента:', error);
+    return false;
+  }
+};
+
 export const saveContent = async (content: SiteContent, immediate: boolean = false): Promise<void> => {
   try {
     console.log('🌐 СОХРАНЕНИЕ В ГЛОБАЛЬНУЮ БД (приоритет)...');
@@ -83,18 +107,31 @@ export const loadContent = async (): Promise<SiteContent> => {
       return fixedContent;
     }
     
-    console.log('⚠️ ГЛОБАЛЬНАЯ БД ПУСТА - используем дефолтный контент');
+    console.log('⚠️ ГЛОБАЛЬНАЯ БД ПУСТА - НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ АВТОМАТИЧЕСКИ');
     
-    // Если БД пуста, используем дефолтный контент и сохраняем в БД
-    const defaultFixedContent = fixBlockOrder(defaultContent);
-    console.log('🔄 Сохраняем дефолтный контент в глобальную БД...');
-    await saveContentToDatabase(defaultFixedContent);
+    // Проверяем есть ли бекап в localStorage
+    try {
+      const backupContent = localStorage.getItem(STORAGE_KEY);
+      if (backupContent) {
+        console.log('💾 ИСПОЛЬЗУЕМ БЕКАП ИЗ localStorage (БД пуста)');
+        const content = JSON.parse(backupContent);
+        const fixedContent = fixBlockOrder(content);
+        
+        // Сохраняем бекап в БД только если это не дефолтный контент
+        if (!isDefaultContent(fixedContent)) {
+          console.log('🔄 Восстанавливаем пользовательский контент в БД из бекапа...');
+          await saveContentToDatabase(fixedContent);
+        }
+        
+        return fixedContent;
+      }
+    } catch (backupError) {
+      console.error('❌ Ошибка загрузки бекапа:', backupError);
+    }
     
-    // Создаем бекап в localStorage
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultFixedContent));
-    console.log('💾 Дефолтный контент сохранен как бекап в localStorage');
-    
-    return defaultFixedContent;
+    // ТОЛЬКО В КРАЙНЕМ СЛУЧАЕ возвращаем дефолтный контент БЕЗ СОХРАНЕНИЯ В БД
+    console.log('🆘 КРАЙНИЙ СЛУЧАЙ: возвращаем дефолтный контент БЕЗ СОХРАНЕНИЯ В БД');
+    return fixBlockOrder(defaultContent);
     
   } catch (error) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА загрузки из БД:', error);
@@ -113,17 +150,7 @@ export const loadContent = async (): Promise<SiteContent> => {
     
     // Последний резерв - дефолтный контент
     console.log('🆘 ПОСЛЕДНИЙ РЕЗЕРВ: дефолтный контент');
-    const defaultFixedContent = fixBlockOrder(defaultContent);
-    
-    // Пытаемся создать бекап
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultFixedContent));
-      console.log('💾 Дефолтный контент сохранен как бекап');
-    } catch (storageError) {
-      console.error('❌ Не удалось создать бекап:', storageError);
-    }
-    
-    return defaultFixedContent;
+    return fixBlockOrder(defaultContent);
   }
 };
 
@@ -189,15 +216,9 @@ export const loadContentSync = (): SiteContent => {
 };
 
 export const resetContent = (): SiteContent => {
-  // Очищаем бекап в localStorage
-  localStorage.removeItem(STORAGE_KEY);
-  console.log('🗑️ Бекап в localStorage очищен');
-  
-  // Возвращаем дефолтный контент БЕЗ автоматического сохранения
-  const ukrainianContent = fixBlockOrder(defaultContent);
-  console.log('📦 Reset to default content');
-  
-  return ukrainianContent;
+  console.log('🚫 RESET ЗАБЛОКИРОВАН - используйте только пользовательский контент');
+  // Возвращаем текущий контент из localStorage или БД
+  return loadContentSync();
 };
 
 export const exportContent = (): string => {

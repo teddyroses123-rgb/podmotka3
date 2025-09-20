@@ -18,22 +18,39 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
       return false;
     }
 
-    console.log('🔄 ПОПЫТКА СОХРАНЕНИЯ В БД...');
+    console.log('🔄 ПОПЫТКА СОХРАНЕНИЯ В БД (ПОЛНАЯ ПЕРЕЗАПИСЬ)...');
     
+    // КРИТИЧНО: Полная перезапись записи с id='main'
+    // Сначала удаляем старую запись, затем создаем новую
+    const { error: deleteError } = await supabase
+      .from('site_content')
+      .delete()
+      .eq('id', 'main');
+    
+    if (deleteError) {
+      console.log('⚠️ Предупреждение при удалении старой записи:', deleteError.message);
+      // Продолжаем выполнение, так как записи может не быть
+    } else {
+      console.log('🗑️ Старая запись удалена');
+    }
+    
+    // Создаем новую запись
     const { data, error } = await supabase
       .from('site_content')
-      .upsert({
+      .insert({
         id: 'main',
         content: content,
+        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+    
 
     if (error) {
-      console.error('❌ ОШИБКА СОХРАНЕНИЯ В БД:', error);
+      console.error('❌ ОШИБКА СОЗДАНИЯ НОВОЙ ЗАПИСИ В БД:', error);
       return false;
     }
 
-    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БАЗУ ДАННЫХ!', data);
+    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БАЗУ ДАННЫХ (ПОЛНАЯ ПЕРЕЗАПИСЬ)!', data);
     return true;
   } catch (error) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА СОХРАНЕНИЯ В БД:', error);
