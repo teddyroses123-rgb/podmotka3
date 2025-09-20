@@ -10,8 +10,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
-// Проверка является ли контент полностью дефолтным (без пользовательских изменений)
-const isCompletelyDefaultContent = (content: SiteContent): boolean => {
+// ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ЗАЩИТА: Проверка является ли контент дефолтным
+const isDefaultContent = (content: SiteContent): boolean => {
   try {
     const hasDefaultHeroTitle = content.blocks.some(block => 
       block.id === 'hero' && 
@@ -26,20 +26,9 @@ const isCompletelyDefaultContent = (content: SiteContent): boolean => {
       block.id === 'analog-module' && block.price === '1800'
     );
     
-    const hasDefaultOpsPrice = content.blocks.some(block => 
-      block.id === 'ops-module' && block.price === '3200'
-    );
-    
-    const hasOnlyDefaultBlocks = content.blocks.filter(block => 
-      block.type === 'custom'
-    ).length === 0; // Нет пользовательских блоков
-    
-    // СТРОГАЯ проверка - ВСЕ 5 признаков должны совпадать для блокировки
-    return hasDefaultHeroTitle && 
-           hasDefaultCanPrice && 
-           hasDefaultAnalogPrice && 
-           hasDefaultOpsPrice && 
-           hasOnlyDefaultBlocks;
+    // Если хотя бы 2 из 3 признаков совпадают - это дефолт
+    const defaultIndicators = [hasDefaultHeroTitle, hasDefaultCanPrice, hasDefaultAnalogPrice].filter(Boolean).length;
+    return defaultIndicators >= 2;
   } catch (error) {
     console.error('❌ Ошибка проверки дефолтного контента:', error);
     return false; // При ошибке НЕ блокируем - пусть сохраняется
@@ -56,8 +45,8 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
     }
 
     // ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ПРОВЕРКА: НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ!
-    if (isCompletelyDefaultContent(content)) {
-      console.log('🚫 БЛОКИРОВКА В SUPABASE: ПОЛНОСТЬЮ ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
+    if (isDefaultContent(content)) {
+      console.log('🚫 БЛОКИРОВКА В SUPABASE: ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
       return false;
     }
 
