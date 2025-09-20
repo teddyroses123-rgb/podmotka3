@@ -63,35 +63,24 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
 
     console.log('🔄 СОХРАНЕНИЕ КОНТЕНТА В БД...');
     
-    // ОРИГИНАЛЬНАЯ ЛОГИКА: DELETE + INSERT для полной перезаписи
-    const { error: deleteError } = await supabase
-      .from('site_content')
-      .delete()
-      .eq('id', 'main');
-    
-    if (deleteError) {
-      console.log('⚠️ Предупреждение при удалении старой записи:', deleteError.message);
-    } else {
-      console.log('🗑️ Старая запись удалена');
-    }
-    
-    // Создаем новую запись
+    // Используем upsert для безопасного создания/обновления записи
     const { data, error } = await supabase
       .from('site_content')
-      .insert({
+      .upsert({
         id: 'main',
         content: content,
-        created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'id'
       });
     
 
     if (error) {
-      console.error('❌ ОШИБКА СОЗДАНИЯ НОВОЙ ЗАПИСИ В БД:', error);
+      console.error('❌ ОШИБКА СОХРАНЕНИЯ ЗАПИСИ В БД:', error);
       return false;
     }
 
-    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БД!', data);
+    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БД!');
     return true;
   } catch (error) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА СОХРАНЕНИЯ В БД:', error);
