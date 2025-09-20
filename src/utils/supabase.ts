@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
-// КРИТИЧЕСКАЯ ФУНКЦИЯ: Проверка является ли контент дефолтным
+// ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ЗАЩИТА: Проверка является ли контент дефолтным
 const isDefaultContent = (content: SiteContent): boolean => {
   try {
     const hasDefaultHeroTitle = content.blocks.some(block => 
@@ -31,35 +31,28 @@ const isDefaultContent = (content: SiteContent): boolean => {
     return defaultIndicators >= 2;
   } catch (error) {
     console.error('❌ Ошибка проверки дефолтного контента:', error);
-    return true; // При ошибке считаем что это дефолт - безопаснее
+    return false; // При ошибке НЕ блокируем - пусть сохраняется
   }
 };
 
+// ОРИГИНАЛЬНАЯ ФУНКЦИЯ + ТОЛЬКО ЗАЩИТА ОТ ДЕФОЛТА
 export const saveContentToDatabase = async (content: SiteContent): Promise<boolean> => {
   try {
-    // КРИТИЧЕСКАЯ ПРОВЕРКА #1: Supabase настроен?
+    // Check if Supabase is properly configured
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('❌ Supabase not configured - missing environment variables');
       return false;
     }
 
-    // КРИТИЧЕСКАЯ ПРОВЕРКА #2: НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ!
+    // ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ПРОВЕРКА: НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ!
     if (isDefaultContent(content)) {
-      console.log('🚫🚫🚫 БЛОКИРОВКА В SUPABASE: ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
-      console.log('🚫🚫🚫 ЗАЩИТА СРАБОТАЛА НА УРОВНЕ БД!');
+      console.log('🚫 БЛОКИРОВКА В SUPABASE: ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
       return false;
     }
 
-    // КРИТИЧЕСКАЯ ПРОВЕРКА #3: Контент не пустой?
-    if (!content || !content.blocks || content.blocks.length === 0) {
-      console.log('🚫🚫🚫 БЛОКИРОВКА: ПУСТОЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ В БД!');
-      return false;
-    }
-
-    console.log('🔄 СОХРАНЕНИЕ ПОЛЬЗОВАТЕЛЬСКОГО КОНТЕНТА В БД (ПОЛНАЯ ПЕРЕЗАПИСЬ)...');
+    console.log('🔄 СОХРАНЕНИЕ КОНТЕНТА В БД...');
     
-    // КРИТИЧНО: Полная перезапись записи с id='main'
-    // Сначала удаляем старую запись, затем создаем новую
+    // ОРИГИНАЛЬНАЯ ЛОГИКА: DELETE + INSERT для полной перезаписи
     const { error: deleteError } = await supabase
       .from('site_content')
       .delete()
@@ -67,7 +60,6 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
     
     if (deleteError) {
       console.log('⚠️ Предупреждение при удалении старой записи:', deleteError.message);
-      // Продолжаем выполнение, так как записи может не быть
     } else {
       console.log('🗑️ Старая запись удалена');
     }
@@ -88,7 +80,7 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
       return false;
     }
 
-    console.log('✅✅✅ ПОЛЬЗОВАТЕЛЬСКИЙ КОНТЕНТ УСПЕШНО СОХРАНЕН В БД (ПОЛНАЯ ПЕРЕЗАПИСЬ)!', data);
+    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БД!', data);
     return true;
   } catch (error) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА СОХРАНЕНИЯ В БД:', error);
@@ -96,6 +88,7 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
   }
 };
 
+// ОРИГИНАЛЬНАЯ ФУНКЦИЯ ЗАГРУЗКИ - БЕЗ ИЗМЕНЕНИЙ
 export const loadContentFromDatabase = async (): Promise<SiteContent | null> => {
   try {
     // Check if Supabase is properly configured
@@ -119,15 +112,6 @@ export const loadContentFromDatabase = async (): Promise<SiteContent | null> => 
 
     if (data && data.content) {
       console.log('✅ КОНТЕНТ ЗАГРУЖЕН ИЗ БД');
-      
-      // КРИТИЧЕСКАЯ ПРОВЕРКА: Если из БД пришел дефолт - НЕ ВОЗВРАЩАЕМ!
-      if (isDefaultContent(data.content as SiteContent)) {
-        console.log('🚫🚫🚫 ИЗ БД ЗАГРУЖЕН ДЕФОЛТ - ЭТО ОШИБКА!');
-        console.log('🚫🚫🚫 ВОЗВРАЩАЕМ NULL ЧТОБЫ НЕ ПЕРЕЗАПИСАТЬ ПОЛЬЗОВАТЕЛЬСКИЕ ДАННЫЕ!');
-        return null;
-      }
-      
-      console.log('✅✅✅ ЗАГРУЖЕН ПОЛЬЗОВАТЕЛЬСКИЙ КОНТЕНТ ИЗ БД');
       return data.content as SiteContent;
     }
 
