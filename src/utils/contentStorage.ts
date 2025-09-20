@@ -6,87 +6,73 @@ import { saveContentToDatabase, loadContentFromDatabase } from './supabase';
 let saveTimeout: NodeJS.Timeout | null = null;
 const SAVE_DELAY = 1000; // 1 секунда задержки
 
-// ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ЗАЩИТА: Проверка является ли контент дефолтным
+const STORAGE_KEY = 'siteContent';
+
+// Функция для проверки является ли контент дефолтным
 const isDefaultContent = (content: SiteContent): boolean => {
   try {
-    // Множественные проверки дефолтного контента
+    // Проверяем по ключевым характеристикам дефолтного контента
     const hasDefaultHeroTitle = content.blocks.some(block => 
       block.id === 'hero' && 
       block.title === 'ПІДМОТКА СПІДОМЕТРА — У ВАШИХ РУКАХ'
-    );
-    
-    const hasDefaultCanPrice = content.blocks.some(block => 
-      block.id === 'can-module' && block.price === '2500'
-    );
-    
-    const hasDefaultAnalogPrice = content.blocks.some(block => 
-      block.id === 'analog-module' && block.price === '1800'
-    );
-    
-    const hasDefaultOpsPrice = content.blocks.some(block => 
-      block.id === 'ops-module' && block.price === '3200'
     );
     
     const hasDefaultModulesCount = content.blocks.filter(block => 
       ['can-module', 'analog-module', 'ops-module'].includes(block.id)
     ).length === 3;
     
-    // Если хотя бы 3 из 5 признаков совпадают - это дефолт
-    const defaultIndicators = [
-      hasDefaultHeroTitle,
-      hasDefaultCanPrice, 
-      hasDefaultAnalogPrice,
-      hasDefaultOpsPrice,
-      hasDefaultModulesCount
-    ].filter(Boolean).length;
+    const hasDefaultPrices = content.blocks.some(block => 
+      block.id === 'can-module' && block.price === '2500'
+    );
     
-    const isDefault = defaultIndicators >= 3;
-    
-    if (isDefault) {
-      console.log('🚫 ОБНАРУЖЕН ДЕФОЛТНЫЙ КОНТЕНТ! БЛОКИРОВКА СОХРАНЕНИЯ!');
-    }
-    
-    return isDefault;
+    return hasDefaultHeroTitle && hasDefaultModulesCount && hasDefaultPrices;
   } catch (error) {
     console.error('❌ Ошибка проверки дефолтного контента:', error);
-    return false; // При ошибке НЕ блокируем - пусть сохраняется
+    return false;
   }
 };
 
-// ОРИГИНАЛЬНАЯ ФУНКЦИЯ СОХРАНЕНИЯ + ТОЛЬКО ЗАЩИТА ОТ ДЕФОЛТА
 export const saveContent = async (content: SiteContent, immediate: boolean = false): Promise<void> => {
   try {
-    // ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ПРОВЕРКА: НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ!
-    if (isDefaultContent(content)) {
-      console.log('🚫 БЛОКИРОВКА: ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
-      return;
-    }
+    console.log('🌐 СОХРАНЕНИЕ В ГЛОБАЛЬНУЮ БД (приоритет)...');
     
-    // ВСЯ ОСТАЛЬНАЯ ЛОГИКА ОРИГИНАЛЬНАЯ
+    // ПРИОРИТЕТ: Сохранение в глобальную БД
     if (immediate) {
-      console.log('⚡ НЕМЕДЛЕННОЕ сохранение контента...');
+      // Немедленное сохранение в БД
       const dbSaved = await saveContentToDatabase(content);
       if (dbSaved) {
-        console.log('✅ КОНТЕНТ СОХРАНЕН В БД');
+        console.log('✅ НЕМЕДЛЕННОЕ сохранение в глобальную БД успешно');
+        // Бекап в localStorage только после успешного сохранения в БД
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
+        console.log('💾 Бекап сохранен в localStorage');
         window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: true } }));
       } else {
-        console.log('❌ ОШИБКА сохранения контента');
+        console.log('❌ ОШИБКА немедленного сохранения в БД');
+        // В случае ошибки БД, сохраняем бекап в localStorage
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
+        console.log('🆘 АВАРИЙНЫЙ бекап в localStorage');
         window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: false } }));
       }
     } else {
-      // Отложенное сохранение
+      // Отложенное сохранение в БД с debounce
       if (saveTimeout) {
         clearTimeout(saveTimeout);
       }
       
       saveTimeout = setTimeout(async () => {
-        console.log('⏰ ОТЛОЖЕННОЕ сохранение контента...');
+        console.log('🌐 ОТЛОЖЕННОЕ сохранение в глобальную БД...');
         const dbSaved = await saveContentToDatabase(content);
         if (dbSaved) {
-          console.log('✅ КОНТЕНТ СОХРАНЕН В БД (отложенно)');
+          console.log('✅ ОТЛОЖЕННОЕ сохранение в глобальную БД успешно');
+          // Бекап в localStorage только после успешного сохранения в БД
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
+          console.log('💾 Бекап сохранен в localStorage');
           window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: true } }));
         } else {
-          console.log('❌ ОШИБКА отложенного сохранения');
+          console.log('❌ ОШИБКА отложенного сохранения в БД');
+          // В случае ошибки БД, сохраняем бекап в localStorage
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
+          console.log('🆘 АВАРИЙНЫЙ бекап в localStorage');
           window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: false } }));
         }
       }, SAVE_DELAY);
@@ -94,35 +80,84 @@ export const saveContent = async (content: SiteContent, immediate: boolean = fal
     
   } catch (error) {
     console.error('❌ Error in saveContent:', error);
-    window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: false, error: error.message } }));
+    // В случае критической ошибки сохраняем бекап в localStorage
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(content));
+      console.log('🆘 КРИТИЧЕСКИЙ бекап в localStorage');
+      window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: false, error: error.message } }));
+    } catch (localError) {
+      console.error('🆘 КРИТИЧЕСКАЯ ОШИБКА: Не удалось сохранить даже бекап:', localError);
+      window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: false, error: localError.message } }));
+    }
   }
 };
 
-// ОРИГИНАЛЬНАЯ ФУНКЦИЯ ЗАГРУЗКИ - БЕЗ ИЗМЕНЕНИЙ
 export const loadContent = async (): Promise<SiteContent> => {
   try {
-    console.log('🔍 ЗАГРУЗКА ИЗ БД...');
+    console.log('🌐 ЗАГРУЗКА ИЗ ГЛОБАЛЬНОЙ БД (приоритет)...');
     
+    // ПРИОРИТЕТ: Всегда загружаем из глобальной БД
     const dbContent = await loadContentFromDatabase();
     if (dbContent) {
-      console.log('✅ КОНТЕНТ ЗАГРУЖЕН ИЗ БД');
+      console.log('✅ КОНТЕНТ ЗАГРУЖЕН ИЗ ГЛОБАЛЬНОЙ БД');
       const fixedContent = fixBlockOrder(dbContent);
+      // Обновляем бекап в localStorage
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fixedContent));
+      console.log('💾 Бекап обновлен в localStorage');
       return fixedContent;
     }
     
-    console.log('⚠️ БД ПУСТА - ИСПОЛЬЗУЕМ ДЕФОЛТ');
+    console.log('⚠️ ГЛОБАЛЬНАЯ БД ПУСТА - НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ АВТОМАТИЧЕСКИ');
+    
+    // Проверяем есть ли бекап в localStorage
+    try {
+      const backupContent = localStorage.getItem(STORAGE_KEY);
+      if (backupContent) {
+        console.log('💾 ИСПОЛЬЗУЕМ БЕКАП ИЗ localStorage (БД пуста)');
+        const content = JSON.parse(backupContent);
+        const fixedContent = fixBlockOrder(content);
+        
+        // Сохраняем бекап в БД только если это не дефолтный контент
+        if (!isDefaultContent(fixedContent)) {
+          console.log('🔄 Восстанавливаем пользовательский контент в БД из бекапа...');
+          await saveContentToDatabase(fixedContent);
+        }
+        
+        return fixedContent;
+      }
+    } catch (backupError) {
+      console.error('❌ Ошибка загрузки бекапа:', backupError);
+    }
+    
+    // ТОЛЬКО В КРАЙНЕМ СЛУЧАЕ возвращаем дефолтный контент БЕЗ СОХРАНЕНИЯ В БД
+    console.log('🆘 КРАЙНИЙ СЛУЧАЙ: возвращаем дефолтный контент БЕЗ СОХРАНЕНИЯ В БД');
     return fixBlockOrder(defaultContent);
     
   } catch (error) {
-    console.error('❌ ОШИБКА БД:', error);
-    console.log('🆘 ОШИБКА БД: используем дефолт');
+    console.error('❌ КРИТИЧЕСКАЯ ОШИБКА загрузки из БД:', error);
+    
+    // ТОЛЬКО В КРИТИЧЕСКОМ СЛУЧАЕ используем бекап из localStorage
+    try {
+      const backupContent = localStorage.getItem(STORAGE_KEY);
+      if (backupContent) {
+        console.log('🆘 ИСПОЛЬЗУЕМ БЕКАП ИЗ localStorage (критический режим)');
+        const content = JSON.parse(backupContent);
+        return fixBlockOrder(content);
+      }
+    } catch (backupError) {
+      console.error('❌ Ошибка загрузки бекапа:', backupError);
+    }
+    
+    // Последний резерв - дефолтный контент
+    console.log('🆘 ПОСЛЕДНИЙ РЕЗЕРВ: дефолтный контент');
     return fixBlockOrder(defaultContent);
   }
 };
 
-// Функция для исправления порядка блоков - БЕЗ ИЗМЕНЕНИЙ
+// Функция для исправления порядка блоков
 const fixBlockOrder = (content: SiteContent): SiteContent => {
   console.log('🔧 Fixing block order');
+  console.log('Current blocks:', content.blocks.map(b => ({ id: b.id, title: b.title, order: b.order, type: b.type })));
   
   const reorderedBlocks = content.blocks.map(block => {
     // Системные блоки с фиксированным порядком
@@ -133,11 +168,18 @@ const fixBlockOrder = (content: SiteContent): SiteContent => {
     if (block.id === 'analog-module') return { ...block, order: 5 }; 
     if (block.id === 'ops-module') return { ...block, order: 6 };
     
+    // Специальная проверка для блока АБС по названию
+    if (block.title && (block.title.includes('АБС') || block.title.includes('абс'))) {
+      console.log(`🎯 Found ABS block: "${block.title}" - setting order = 7`);
+      return { ...block, order: 7, type: 'custom' };
+    }
+    
     // Пользовательские блоки - между OPS (6) и видео (50)
     if (block.type === 'custom') {
       const customBlocks = content.blocks.filter(b => b.type === 'custom');
       const customIndex = customBlocks.findIndex(b => b.id === block.id);
       const newOrder = 7 + customIndex;
+      console.log(`📦 Custom block "${block.title}" (${block.id}): ${block.order} -> ${newOrder}`);
       return { ...block, order: newOrder };
     }
     
@@ -145,8 +187,11 @@ const fixBlockOrder = (content: SiteContent): SiteContent => {
     if (block.id === 'videos') return { ...block, order: 50 };
     if (block.id === 'contacts') return { ...block, order: 51 };
     
+    // Остальные блоки сохраняют свой порядок
     return block;
   });
+  
+  console.log('✅ New block order:', reorderedBlocks.map(b => ({ id: b.id, title: b.title, order: b.order, type: b.type })));
   
   return {
     ...content,
@@ -154,15 +199,26 @@ const fixBlockOrder = (content: SiteContent): SiteContent => {
   };
 };
 
-// ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ - ОРИГИНАЛЬНЫЕ БЕЗ ИЗМЕНЕНИЙ
 export const loadContentSync = (): SiteContent => {
-  console.log('📱 СИНХРОННАЯ ЗАГРУЗКА: дефолт для отображения');
+  try {
+    // Синхронная загрузка только из бекапа localStorage (для экстренных случаев)
+    const backupContent = localStorage.getItem(STORAGE_KEY);
+    if (backupContent) {
+      console.log('💾 Загружен бекап из localStorage (синхронно)');
+      const content = JSON.parse(backupContent);
+      return fixBlockOrder(content);
+    }
+  } catch (error) {
+    console.error('❌ Error loading backup sync:', error);
+  }
+  console.log('📦 Using default content (sync fallback)');
   return fixBlockOrder(defaultContent);
 };
 
 export const resetContent = (): SiteContent => {
-  console.log('🔄 RESET к дефолту');
-  return fixBlockOrder(defaultContent);
+  console.log('🚫 RESET ЗАБЛОКИРОВАН - используйте только пользовательский контент');
+  // Возвращаем текущий контент из localStorage или БД
+  return loadContentSync();
 };
 
 export const exportContent = (): string => {
@@ -180,35 +236,42 @@ export const importContent = (jsonString: string): SiteContent => {
   }
 };
 
+// Функция для принудительной синхронизации с базой данных
 export const forceSyncWithDatabase = async (): Promise<boolean> => {
   try {
-    console.log('🔄 Принудительная синхронизация с БД...');
-    const dbContent = await loadContentFromDatabase();
-    if (dbContent) {
-      console.log('✅ Синхронизация завершена');
-      return true;
+    console.log('🔄 Force sync with database...');
+    const localContent = loadContentSync();
+    const success = await saveContentToDatabase(localContent);
+    if (success) {
+      console.log('✅ Force sync completed successfully');
+      window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: true } }));
+    } else {
+      console.log('❌ Force sync failed');
+      window.dispatchEvent(new CustomEvent('contentSaved', { detail: { success: false } }));
     }
-    return false;
+    return success;
   } catch (error) {
-    console.error('❌ Ошибка синхронизации:', error);
+    console.error('❌ Error in force sync:', error);
     return false;
   }
 };
 
+// Функция для загрузки из базы данных с перезаписью localStorage
 export const loadFromDatabaseAndOverwrite = async (): Promise<SiteContent> => {
   try {
-    console.log('🔄 Загрузка из БД с перезаписью...');
+    console.log('🔄 Loading from database and overwriting localStorage...');
     const dbContent = await loadContentFromDatabase();
     if (dbContent) {
       const fixedContent = fixBlockOrder(dbContent);
-      console.log('✅ Контент загружен из БД');
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fixedContent));
+      console.log('✅ Content loaded from database and saved to localStorage');
       return fixedContent;
     } else {
-      console.log('⚠️ БД пуста - используем дефолт');
-      return fixBlockOrder(defaultContent);
+      console.log('⚠️ No content in database, keeping current localStorage');
+      return loadContentSync();
     }
   } catch (error) {
-    console.error('❌ Ошибка загрузки из БД:', error);
-    return fixBlockOrder(defaultContent);
+    console.error('❌ Error loading from database:', error);
+    return loadContentSync();
   }
 };

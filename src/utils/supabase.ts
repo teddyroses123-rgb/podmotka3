@@ -10,32 +10,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
-// ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ЗАЩИТА: Проверка является ли контент дефолтным
-const isDefaultContent = (content: SiteContent): boolean => {
-  try {
-    const hasDefaultHeroTitle = content.blocks.some(block => 
-      block.id === 'hero' && 
-      block.title === 'ПІДМОТКА СПІДОМЕТРА — У ВАШИХ РУКАХ'
-    );
-    
-    const hasDefaultCanPrice = content.blocks.some(block => 
-      block.id === 'can-module' && block.price === '2500'
-    );
-    
-    const hasDefaultAnalogPrice = content.blocks.some(block => 
-      block.id === 'analog-module' && block.price === '1800'
-    );
-    
-    // Если хотя бы 2 из 3 признаков совпадают - это дефолт
-    const defaultIndicators = [hasDefaultHeroTitle, hasDefaultCanPrice, hasDefaultAnalogPrice].filter(Boolean).length;
-    return defaultIndicators >= 2;
-  } catch (error) {
-    console.error('❌ Ошибка проверки дефолтного контента:', error);
-    return false; // При ошибке НЕ блокируем - пусть сохраняется
-  }
-};
-
-// ОРИГИНАЛЬНАЯ ФУНКЦИЯ + ТОЛЬКО ЗАЩИТА ОТ ДЕФОЛТА
 export const saveContentToDatabase = async (content: SiteContent): Promise<boolean> => {
   try {
     // Check if Supabase is properly configured
@@ -44,15 +18,10 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
       return false;
     }
 
-    // ЕДИНСТВЕННАЯ ДОБАВЛЕННАЯ ПРОВЕРКА: НЕ СОХРАНЯЕМ ДЕФОЛТНЫЙ КОНТЕНТ!
-    if (isDefaultContent(content)) {
-      console.log('🚫 БЛОКИРОВКА В SUPABASE: ДЕФОЛТНЫЙ КОНТЕНТ НЕ СОХРАНЯЕТСЯ!');
-      return false;
-    }
-
-    console.log('🔄 СОХРАНЕНИЕ КОНТЕНТА В БД...');
+    console.log('🔄 ПОПЫТКА СОХРАНЕНИЯ В БД (ПОЛНАЯ ПЕРЕЗАПИСЬ)...');
     
-    // ОРИГИНАЛЬНАЯ ЛОГИКА: DELETE + INSERT для полной перезаписи
+    // КРИТИЧНО: Полная перезапись записи с id='main'
+    // Сначала удаляем старую запись, затем создаем новую
     const { error: deleteError } = await supabase
       .from('site_content')
       .delete()
@@ -60,6 +29,7 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
     
     if (deleteError) {
       console.log('⚠️ Предупреждение при удалении старой записи:', deleteError.message);
+      // Продолжаем выполнение, так как записи может не быть
     } else {
       console.log('🗑️ Старая запись удалена');
     }
@@ -80,7 +50,7 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
       return false;
     }
 
-    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БД!', data);
+    console.log('✅ КОНТЕНТ УСПЕШНО СОХРАНЕН В БАЗУ ДАННЫХ (ПОЛНАЯ ПЕРЕЗАПИСЬ)!', data);
     return true;
   } catch (error) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА СОХРАНЕНИЯ В БД:', error);
@@ -88,7 +58,6 @@ export const saveContentToDatabase = async (content: SiteContent): Promise<boole
   }
 };
 
-// ОРИГИНАЛЬНАЯ ФУНКЦИЯ ЗАГРУЗКИ - БЕЗ ИЗМЕНЕНИЙ
 export const loadContentFromDatabase = async (): Promise<SiteContent | null> => {
   try {
     // Check if Supabase is properly configured
@@ -111,7 +80,7 @@ export const loadContentFromDatabase = async (): Promise<SiteContent | null> => 
     }
 
     if (data && data.content) {
-      console.log('✅ КОНТЕНТ ЗАГРУЖЕН ИЗ БД');
+      console.log('✅ КОНТЕНТ УСПЕШНО ЗАГРУЖЕН ИЗ БД');
       return data.content as SiteContent;
     }
 
